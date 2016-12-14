@@ -14,7 +14,6 @@ player_select <-  "Shin-Soo Choo"#"Edwin Encarnacion" #"Robinson Cano" #"Aroldis
 comp_cutoff <- 1950   #Cuts off historical data
 btt_AB_cutoff <- 130
 ptch_Inn_cutoff <- 50
-#zvalue= 2.58#1.645          # 90% confidence level
 trim=.60             # % trim used for trimmed mean and sd. 
 ptch_constant=3       #higher values relax similarity criteria
 btt_constant=15     #higher values relax similarity criteria
@@ -22,10 +21,11 @@ confidence_level= .99
 position_match=t
 WAR_Value = 8 #dollars per war in millions
 min_compsize = 10
+
 #get player
 selected<-olap %>% filter(.,nameFirstLast==player_select) %>% filter(.,age >= round((max(age)-2),1))
 
-  #filter(.,year(now())-year(finalGame)<=3) %>% 
+#filter(.,year(now())-year(finalGame)<=3) %>% 
 
 #calculate 3 year weighted average of player
 
@@ -337,27 +337,6 @@ actuals <- filter(olap_actuals,playerID==selected_eval$playerID,yearID>=min(war_
 
 war_player <- left_join(war_player,actuals)
 
-# ##############################################################################################
-# with(hist_player_career, tapply(WAR, yearSeason, shapiro.test))
-# 
-# #MONTE-CARLO SIMULATIONS
-# war_prj_mc<- select(hist_player_career,yearSeason,Similarity_Score) %>% group_by(.,yearSeason)%>%summarise(.,sim_sum=sum(Similarity_Score)) %>% left_join(select(hist_player_career,yearSeason,WAR,Similarity_Score),.)%>%mutate(.,sim_weight=Similarity_Score/sim_sum)%>% group_by(.,yearSeason) %>%select(.,-Similarity_Score,-sim_sum ) %>% filter(.,yearSeason>0) %>% ungroup(.)
-# 
-# 
-# # war_prj_mc <- select(hist_player_career,yearSeason,WAR,Similarity_Score) %>% mutate(.,sim_sum=sum(Similarity_Score),sim_weight=Similarity_Score/sim_sum)%>% group_by(.,yearSeason) %>%select(.,-Similarity_Score,-sim_sum ) %>% filter(.,yearSeason>0)
-# 
-# for (i in 1:7) {
-# s <- as.data.frame(print(summary.mc(mc(mcstoc(rempiricalD,values=c(war_prj_mc[war_prj_mc$yearSeason==1,]$WAR), prob=c(war_prj_mc[war_prj_mc$yearSeason==1,]$sim_weight))))))
-# assign(paste("s", i, sep = '_'), s)
-# }
-# 
-# mcdata(war_prj_mc$WAR, type="0", nsv=ndvar(), nsu=ndunc(),
-#        nvariates=1, outm="each")
-# 
-# 
-# forecast_seasons <- bind_rows(s_1,s_2,s_3,s_4,s_5,s_6,s_7) %>% select(.,mean,X2.5.,X97.5.)%>%mutate(.,yearSeason=as.numeric(rownames(.)))
-# 
-# war_player_mc<-select(selected,playerID,yearID,age,WAR)%>%mutate(.,age_eval=selected_eval$age_eval,yearSeason=age-age_eval)%>%full_join(.,forecast_seasons,by="yearSeason")%>%mutate(.,WAR=coalesce(WAR,mean),d_forecast=ifelse(yearSeason>0,1,0)) %>% select(.,-mean) %>% mutate(.,playerID=na.locf(playerID),age=na.locf(age),age_eval=na.locf(age_eval),yearID=na.locf(yearID),age=ifelse(yearSeason>0,age+yearSeason,age),yearID=ifelse(yearSeason>0,yearID+yearSeason,yearID))#%>%mutate(.,left=ifelse(d_forecast==1,left,NA),right=ifelse(d_forecast==1,right,NA))
 
 
 #visualize w/ actuals
