@@ -4,13 +4,20 @@ source("C:/Users/dhollier/Box Sync/- DHOLLIER Private/R_Resources/myfunctions/ge
 source("C:/Users/dhollier/Box Sync/- DHOLLIER Private/R_Resources/myfunctions/multiplot.R")
 get_package(c("dplyr","tidyr","Lahman","lubridate","sqldf","zoo","ggplot2","forecast","Sabermetrics","mc2d","weights"))
 
+hindcast_year=2015
 load("./trn/olap_cut.RData")
 olap_actuals <- olap
-olap<-olap%>% filter(.,yearID <=2010) #Cuts off data for hindcasting
+olap<-olap%>% filter(.,yearID <=hindcast_year) #Cuts off data for hindcasting
 
+#player_list <-  sample(olap[which(olap$yearID==hindcast_year & olap$primary_pos!="P"),]$nameFirstLast,100,replace=F)
+model_mape <-  data.frame(nameFirstLast=NA,yearSeason=NA,abs_error_pct=NA)
+player_list <-  "Stephen Piscotty"
+for (p in player_list) {
+
+  tryCatch({
 #parameters
 
-player_select <-  "Shin-Soo Choo"#"Edwin Encarnacion" #"Robinson Cano" #"Aroldis Chapman"  #"Mike Trout"#"Matt Kemp"#"Billy Hamilton" 
+player_select <-p#"Shin-Soo Choo"#"Edwin Encarnacion" #"Robinson Cano" #"Aroldis Chapman"  #"Mike Trout"#"Matt Kemp"#"Billy Hamilton" 
 comp_cutoff <- 1950   #Cuts off historical data
 btt_AB_cutoff <- 130
 ptch_Inn_cutoff <- 50
@@ -18,9 +25,14 @@ trim=.60             # % trim used for trimmed mean and sd.
 ptch_constant=3       #higher values relax similarity criteria
 btt_constant=15     #higher values relax similarity criteria
 confidence_level= .99
-position_match=t
+position_match=T
 WAR_Value = 8 #dollars per war in millions
 min_compsize = 10
+avg_mape=1.429107
+war_pct_weight=.7
+war_avg_weight=.3
+
+
 
 #get player
 selected<-olap %>% filter(.,nameFirstLast==player_select) %>% filter(.,age >= round((max(age)-2),1))
@@ -138,6 +150,9 @@ for (r in 1:nrow(hist_player_pool)) {
 }
 
 if (selected_eval$primary_pos =="P") {
+  
+  
+  
   for (r in 1:nrow(hist_player_pool)) {
     
     for (i in ptch_vars) {
@@ -172,7 +187,7 @@ hist_player_pool3<- hist_player_pool2%>% mutate(.,Similarity_Score=100*(( simila
 
 
 #IF COMP POPULATION IS TOO SMALL THEN RELAX COMPAIRISON CRITERIA TO ALLOW A LARGER SAMPLE
-while (length(hist_player_pool3$Similarity_Score[which(hist_player_pool3$Similarity_Score>0)])<min_compsize) {
+while (length(hist_player_pool3$Similarity_Score[which(hist_player_pool3$Similarity_Score>0)])<min_compsize & min_compsize<10) {
   
 similarity_constant=similarity_constant+1
     
@@ -212,7 +227,7 @@ hist_player_career <- hist_player_career %>% group_by(.,playerID,retroID,bbrefID
 #war_prj<- select(hist_player_career,yearSeason,Similarity_Score)%>% group_by(.,yearSeason) %>%summarise(.,sim_sum=sum(Similarity_Score)) %>% left_join(select(hist_player_career,yearSeason,WAR_pct_chg,Similarity_Score),.) %>%mutate(.,sim_weight=Similarity_Score/sim_sum)%>% group_by(.,yearSeason) %>%select(.,-Similarity_Score,-sim_sum ) %>% mutate(.,n=n(),s=sd(WAR_pct_chg))%>% mutate(.,trim.lo=floor(n*trim)+1)%>%mutate(.,trim.hi=n+1-trim.lo) %>% arrange(.,yearSeason,WAR_pct_chg)%>% mutate(.,groupcount=index(n))%>% filter(.,groupcount>=trim.hi & groupcount<=trim.lo)
 
 
-war_prj<- select(hist_player_career,yearSeason,Similarity_Score)%>% group_by(.,yearSeason) %>%summarise(.,sim_sum=sum(Similarity_Score)) %>% left_join(select(hist_player_career,yearSeason,WAR_pct_chg,Similarity_Score),.)%>% group_by(.,yearSeason) %>% mutate(.,n=n(),s=sd(WAR_pct_chg))%>% mutate(.,trim.lo=floor(n*trim)+1)%>%mutate(.,trim.hi=n+1-trim.lo) %>%filter(.,is.na(WAR_pct_chg)==F) %>%arrange(.,yearSeason,WAR_pct_chg)%>% mutate(.,groupcount=index(n))%>% filter(.,groupcount>=trim.hi & groupcount<=trim.lo) %>% mutate(.,sim_weight=Similarity_Score/sim_sum)%>%select(.,-Similarity_Score,-sim_sum ) 
+war_prj<- select(hist_player_career,yearSeason,Similarity_Score)%>% group_by(.,yearSeason) %>%summarise(.,sim_sum=sum(Similarity_Score)) %>% left_join(select(hist_player_career,yearSeason,WAR,WAR_pct_chg,Similarity_Score),.)%>% group_by(.,yearSeason) %>% mutate(.,n=n(),s=sd(WAR_pct_chg))%>% mutate(.,trim.lo=floor(n*trim)+1)%>%mutate(.,trim.hi=n+1-trim.lo) %>%filter(.,is.na(WAR_pct_chg)==F) %>%arrange(.,yearSeason,WAR_pct_chg)%>% mutate(.,groupcount=index(n))%>% filter(.,groupcount>=trim.hi & groupcount<=trim.lo) %>% mutate(.,sim_weight=Similarity_Score/sim_sum)%>%select(.,-Similarity_Score,-sim_sum ) 
 
 
 #%>%summarise_each(funs(weighted.mean(.,sim_weight)),-sim_weight)%>% mutate(.,error=(qgamma(.95,rate=WAR,shape=5)*s/sqrt(n)),left=WAR-error,right=WAR+error)
@@ -234,12 +249,14 @@ war_prj<- select(hist_player_career,yearSeason,Similarity_Score)%>% group_by(.,y
 # wtt <- wtd.t.test(test,weight = weight)
 # wtt$additional[[4]]
 
+#calculated weighted average of players
+comp_war_avgs <- select(war_prj,yearSeason,WAR, sim_weight) %>% filter(.,yearSeason>0)%>% group_by(.,yearSeason)%>% summarise(.,comp_avg_war=weighted.mean(WAR,sim_weight,na.rm=T)) %>% ungroup(.)
 
 war_prj$pct_chg_mean=NA
 war_prj$lower=NA
 war_prj$upper=NA
 
-
+#caculuate weighted percentage change using t test
 for (i in 1:max(war_prj$yearSeason)) {
   
   wttest <-wtd.t.test(war_prj$WAR_pct_chg[which(war_prj$yearSeason==i)],weight=war_prj$sim_weight[which(war_prj$yearSeason==i)])
@@ -259,38 +276,11 @@ for (i in 1:max(war_prj$yearSeason)) {
   
 }
 
-#wttest <-wtd.t.test(war_prj$WAR_pct_chg[which(war_prj$yearSeason==5)],weight=war_prj$sim_weight[which(war_prj$yearSeason==5)])
+
+#roll up and join weighted WAR avg
+war_prj <- war_prj %>% group_by(.,yearSeason) %>% summarise_each(funs(mean(.,na.rm=T)))%>%left_join(.,comp_war_avgs) %>% select(.,-WAR)
 
 
-war_prj <- war_prj %>% group_by(.,yearSeason) %>% summarise_each(funs(mean(.,na.rm=T))) 
-
-
-##############
-
-
-
-
-
-# sqlcode <- "select yearSeason, sum(WAR_pct_chg*sim_weight)as wt_WAR_pct_chg
-#             from war_prj
-#             group by yearSeason"
-# weighted_war<- sqldf(sqlcode)
-# weighted_war$wt_WAR_pct_chg=as.numeric(weighted_war$wt_WAR_pct_chg)
-# 
-# 
-# war_prj <- left_join(war_prj,weighted_war) %>% group_by(.,yearSeason)%>%mutate(.,wt.variance=sum(sim_weight*(WAR_pct_chg-wt_WAR_pct_chg)^2)) %>% mutate(.,wt.sd=sqrt(wt.variance)) %>% mutate(.,wt.upper=wt_WAR_pct_chg+zvalue*(wt.sd/sqrt(n)),wt.lower=wt_WAR_pct_chg-zvalue*(wt.sd/sqrt(n))) %>% select(.,-n,-s,-WAR_pct_chg,-sim_weight)%>%summarise_each(funs(mean(.,na.rm=T))) %>% rename(.,WAR_pct_chg=wt_WAR_pct_chg)
-
-
-
-# war_prj <- left_join(war_prj,weighted_war) %>% group_by(.,yearSeason)%>%mutate(.,wt.variance=sum(sim_weight*(WAR-wWAR)^2)) %>% mutate(.,wt.sd=sqrt(wt.variance)) %>% mutate(.,wt.upper=wWAR+zvalue*(wt.sd/sqrt(n)),wt.lower=wWAR-zvalue*(wt.sd/sqrt(n))) %>% select(.,-n,-s,-WAR,-sim_weight)%>%summarise_each(funs(mean(.,na.rm=T))) %>% rename(.,WAR=wWAR)
-
-
-
-# Using Marcels:
- # war_prj<- select(hist_player_career,yearSeason,Similarity_Score) %>% group_by(.,yearSeason)%>%summarise(.,sim_sum=sum(Similarity_Score)) %>% left_join(select(hist_player_career,yearSeason,WAR,mWAR_diff,Similarity_Score),.)%>%mutate(.,sim_weight=Similarity_Score/sim_sum)%>% group_by(.,yearSeason) %>%select(.,-Similarity_Score,-sim_sum ) %>% summarise_each(funs(weighted.mean(.,sim_weight,na.rm=T)),-sim_weight) %>% ungroup(.)%>%mutate(.,warnew=WAR+mWAR_diff)
-
-
-# war_player<-select(selected,playerID,yearID,age,WAR)%>%mutate(.,age_eval=selected_eval$age_eval,yearSeason=age-age_eval)%>%full_join(.,war_prj,by="yearSeason")%>%mutate(.,WAR=coalesce(WAR.x,WAR.y),d_forecast=ifelse(yearSeason>0,1,0)) %>% select(.,-WAR.x,-WAR.y) %>% mutate(.,playerID=na.locf(playerID),age=na.locf(age),age_eval=na.locf(age_eval),yearID=na.locf(yearID),age=ifelse(yearSeason>0,age+yearSeason,age),yearID=ifelse(yearSeason>0,yearID+yearSeason,yearID))%>%mutate(.,left=ifelse(d_forecast==1,left,NA),right=ifelse(d_forecast==1,right,NA))
 
 
 war_player<-select(selected,playerID,yearID,age,WAR)%>%mutate(.,age_eval=selected_eval$age_eval,yearSeason=round(age-age_eval,0))%>%full_join(.,war_prj,by="yearSeason")%>%mutate(.,d_forecast=ifelse(yearSeason>0,1,0)) %>% mutate(.,playerID=na.locf(playerID),age=na.locf(age),age_eval=na.locf(age_eval),yearID=na.locf(yearID),age=ifelse(yearSeason>0,age+yearSeason,age),yearID=ifelse(yearSeason>0,yearID+yearSeason,yearID)) %>% arrange(.,yearSeason)
@@ -328,7 +318,7 @@ lag_i = i-1
 
 
 
-war_player<-select(war_player,-WAR_pct_chg, -trim.lo, -trim.hi,-groupcount, -sim_weight)%>% mutate(.,WAR=coalesce(WAR,WAR2),upper=ifelse(d_forecast==1,upper,NA),lower=ifelse(d_forecast==1,lower,NA)) %>% mutate(.,projected_value=WAR*WAR_Value)
+war_player<-select(war_player,-WAR_pct_chg, -trim.lo, -trim.hi,-groupcount, -sim_weight)%>%group_by(.,yearSeason)%>% mutate(.,war_sum=WAR2+comp_avg_war) %>%mutate(.,WAR_Comp=(war_pct_weight*WAR2)+(war_avg_weight*comp_avg_war))%>%mutate(.,WAR=coalesce(WAR,WAR_Comp),upper=ifelse(d_forecast==1,upper,NA),lower=ifelse(d_forecast==1,lower,NA)) %>% mutate(.,projected_value=WAR*WAR_Value) %>% ungroup(.)
 
 
  
@@ -340,9 +330,32 @@ war_player <- left_join(war_player,actuals)
 
 
 #visualize w/ actuals
-avg_mape=1.429107
 
-war_player <- war_player %>% mutate(.,avg_mape=avg_mape)%>% mutate(.,upper=ifelse(d_forecast==1,WAR*(1+avg_mape),NA), lower=ifelse(d_forecast==1,WAR*(1-avg_mape),NA))
+
+war_player <- war_player %>% mutate(.,avg_mape=avg_mape)%>% mutate(.,upper=ifelse(d_forecast==1,WAR*(1+avg_mape),NA), lower=ifelse(d_forecast==1,WAR*(1-avg_mape),NA),abs_error_pct=abs(WAR_Actual-WAR)/abs(WAR_Actual))
+
+x <- filter(hist_player_career,yearSeason>0,Similarity_Score>0) %>% select(.,yearSeason,WAR) %>% group_by(.,yearSeason)%>%summarise(.,WAR=mean(WAR,na.rm=T))
+
+
+print(p)
+
+
+mape_df <- data.frame(nameFirstLast=p,yearSeason=war_player$yearSeason,abs_error_pct=war_player$abs_error_pct) %>% filter(.,is.na(abs_error_pct)==F,yearSeason>0)
+model_mape <- rbind(model_mape,mape_df)
+#print(model_mape)
+
+  }, error=function(e){cat("ERROR :",conditionMessage(e), "\n")})
+
+}
+
+
+
+model_mape2 <- filter(model_mape,is.na(abs_error_pct)==F,is.nan(abs_error_pct)==F,is.infinite(abs_error_pct)==F) %>% select(.,-nameFirstLast)%>% group_by(.,yearSeason)%>% summarise(.,mape=mean(abs_error_pct,na.rm = T))
+
+model_mape3 <- filter(model_mape,is.na(abs_error_pct)==F,is.nan(abs_error_pct)==F,is.infinite(abs_error_pct)==F) %>% select(.,-nameFirstLast,-yearSeason)%>% summarise(.,mape=mean(abs_error_pct,na.rm = T))
+
+avg_mape=mean(model_mape2$mape,na.rm = T)
+
 
 
 eval_yr = as.numeric(filter(war_player,yearSeason==0)%>%select(yearID))
@@ -361,9 +374,10 @@ ggplot(war_player,aes(x=yearID))+
   scale_x_continuous(breaks=seq(min(war_player$yearID),max(war_player$yearID),by=1))+
   geom_vline(xintercept = eval_yr)+
   geom_hline(yintercept = 0)+
-  geom_errorbar(limits,position=position_dodge(width=.25),colour="blue")+
+  #geom_errorbar(limits,position=position_dodge(width=.25),colour="blue")+
   ggtitle(paste(player_select," -  Age:",war_player$age_eval," -  Wins Above Replacement Projection",sep=" "))+
   theme_gray()
 
-x <- filter(hist_player_career,yearSeason>0,Similarity_Score>45) %>% select(.,yearSeason,WAR) %>% group_by(.,yearSeason)%>%summarise(.,WAR=mean(WAR,na.rm=T))
+print(model_mape3)
 
+#x <- filter(hist_player_career,yearSeason>0,Similarity_Score>0) %>% select(.,yearSeason,WAR) %>% group_by(.,yearSeason)%>%summarise(.,WAR=mean(WAR,na.rm=T))
